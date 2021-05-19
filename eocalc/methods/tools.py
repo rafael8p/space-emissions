@@ -1,9 +1,11 @@
 # -*- coding: utf-8 -*-
+# %%
 """Basic toolbox for space emission calculator used in emission calcs."""
 import numpy as np
 import pandas as pd
 import scipy.special
-import binas
+#import binas as binas
+import eocalc.methods.binas as binas
 # formulas gaussian plumes
 # based on (Fioletov et al., 2017; Dammers et al., 2021)
 # https://acp.copernicus.org/articles/17/12597/2017/
@@ -31,9 +33,9 @@ def calc_wind_direction(u, v):
     v = np.array(v)
     wind_dir = np.zeros(len(u),float)
     
-    sel_lzero = (v >= 0)
-    sel_neg_both = ((u < 0) & ( v < 0))
-    sel_negv_posu = ((u >= 0) &( v < 0))
+    sel_lzero = (v >= 0.)
+    sel_neg_both = ((u < 0.) & ( v < 0.))
+    sel_negv_posu = ((u >= 0.) &( v < 0.))
     
     if len(wind_dir[sel_lzero])>0:
         wind_dir[sel_lzero] = ((180. / np.pi) * np.arctan(u[sel_lzero] / v[sel_lzero]) + 180.)
@@ -52,8 +54,8 @@ def rotate_plume_around_point(reflon, reflat, lon, lat, wind_direction):
     y_globe = binas.earth_radius * dtr * (lat - reflat)
     cos_wd = np.cos(-wind_direction * dtr)
     sin_wd = np.sin(-wind_direction * dtr)
-    x_grid = x_globe * coswd + y_globe * sin_wd
-    y_grid = -x_globe * sinwd + y_globe * cos_wd
+    x_grid = x_globe * cos_wd + y_globe * sin_wd
+    y_grid = -x_globe * sin_wd + y_globe * cos_wd
     return x_grid, y_grid
     
 # footprint mapper --> for if we want to oversample individual observations to create more contrast/sharpness
@@ -99,11 +101,42 @@ def constant_flowfun(x1, x2, s1, decay, plumewidth):
 # legendre bias function or other
 
 # setup_lin_matrix --> create the matrix for AX=B
+def create_linear_system(datadf,nss,lin_shape_1,source_lon,source_lat,lon_var,lat_var,windspeed_var,winddirec_var,lamb,sigma):
+    flow_rot = np.zeros(lin_shape_1,float)
+    x_rot = np.zeros(lin_shape_1,float)
+    y_rot = np.zeros(lin_shape_1,float)
+    # build in something to limit number of operations
+    # for example only obs within a square of the nearest 4 degrees all round?
+    # TODO: better lifetime dependent...
+    selec = ((np.abs(datadf[lon_var].values - source_lon) < 4.0) & (
+            np.abs(datadf[lat_var].values - source_lat) < 4.0))
+    # if len(datadf[lon_var].values[selec]) == 0:
+        # continue
+    rotated = np.array(
+        rotate_plume_around_point(source_lon,source_lat, datadf[lon_var].values[selec], datadf[lat_var].values[selec],
+                            datadf[winddirec_var].values[selec]))
+    # write to rotation x,y matrices
+    x_rot[selec] = rotated[0, :]
+    y_rot[selec] = rotated[1, :]
+
+    if len(flow_rot[selec]) > 1:  # [selec2]) > 1:
+        indexi = np.arange(lin_shape_1)[selec]  # [selec2]
+        flow_rot[indexi] = constant_flowfun(
+            x_rot[indexi], y_rot[indexi], datadf[windspeed_var].values[indexi],
+            lamb,sigma)
+    else:
+        print('length wrong')
+        raise ValueError
+
+    if np.mod(nss,100)==0:print('done',nss)
+    return nss,flow_rot,x_rot,y_rot
 
 # fitting operator?
 
-# multi source helper --> if multisourcing operations
 
+# multi source helper --> if multisourcing operations
+def multi_helper(args):
+    return create_linear_system(*args)
 
 # flatten lists --> little helper to correct obsession with lists
 def flatten_list(list_of_lists):
