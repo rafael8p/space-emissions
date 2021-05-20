@@ -12,7 +12,6 @@ class Pollutant(Enum):
     NH3 = auto()
     PM2_5 = auto()
 
-
 class GNFR(Enum):
     """
     Defines list of gridded NFR (GNFR) sectors.

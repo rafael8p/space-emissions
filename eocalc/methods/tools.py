@@ -6,6 +6,7 @@ import pandas as pd
 import scipy.special
 #import binas as binas
 import eocalc.methods.binas as binas
+import netCDF4
 # formulas gaussian plumes
 # based on (Fioletov et al., 2017; Dammers et al., 2021)
 # https://acp.copernicus.org/articles/17/12597/2017/
@@ -143,9 +144,66 @@ def flatten_list(list_of_lists):
     return [item for sublist in list_of_lists for item in sublist]
 
 # make nc file for list of variables, dimensions, attributes
+def create_nc_file(filename,dimensions,datafields,datapackage):
+
+    abc = netCDF4.Dataset(filename,'w')
+    for dim in dimensions:
+        abc.createD
+
 
 # create basic emission fields from a inventory for comparison?
 
-# create subset
 
+# read data
+def _assure_data_availability(day: date) -> str:
+    def is_gz_file(filepath):
+        with open(filepath, 'rb') as testfile:
+            return testfile.read(2) == b'\x1f\x8b'  # gzip 'magic number'
+
+    file = f"{LOCAL_DATA_FOLDER}/no2_{day:%Y%m}.asc"
+
+    with threading.Lock():
+        if not os.path.isfile(f"{file}"):
+            if not os.path.isfile(f"{file}.original.gz"):
+                # TODO Handle HTTP errors
+                urlretrieve(TEMIS_DOWNLOAD_URL % (f"{day:%Y}", f"{day:%m}", f"{day:%Y%m}"), f"{file}.original.gz")
+
+            # TODO Test this on different platforms, behaviours seem to differ!
+            with gzip.open(f"{file}.original.gz", 'rb') as compressed:
+                with open(f"{file}.gz", 'wb') as uncompressed:
+                    shutil.copyfileobj(compressed, uncompressed)
+            if is_gz_file(f"{file}.gz"):
+                with gzip.open(f"{file}.gz", 'rb') as compressed:
+                    with open(f"{file}", 'wb') as uncompressed:
+                        shutil.copyfileobj(compressed, uncompressed)
+            else:
+                shutil.move(f"{file}.gz", f"{file}")
+
+            # TODO Remove downloaded/intermediate files?
+
+    return file
 # check match with existing subsets
+def _read_subset_data(region: MultiPolygon, file: str) -> ():
+    # TODO Make this work with regions wrapping around to long < -180 or long > 180?
+    min_lat, max_lat = region.bounds[1] - region.bounds[1] % TEMIS_BIN_WIDTH, region.bounds[3]
+    min_long, max_long = region.bounds[0] - region.bounds[0] % TEMIS_BIN_WIDTH,  region.bounds[2]
+
+    result = []
+
+    with open(file, 'r') as data:
+        lat = -91
+        for line in data:
+            if line.startswith("lat="):
+                lat = float(line.split('=')[1]) - TEMIS_BIN_WIDTH / 2
+                offset = -180  # We need to go from -180° to +180° for each latitude
+            elif min_lat <= lat < max_lat and line[:4].strip().lstrip('-').isdigit():
+                for count, long in enumerate(offset + x * TEMIS_BIN_WIDTH for x in range(TEMIS_VALUES_PER_ROW)):
+                    if min_long <= long < max_long:
+                        emission = int(line[count * 4:count * 4 + 4])  # All emission values are four digits wide
+                        result += [emission] if emission > TEMIS_NAN_VALUE else [numpy.NaN]
+                offset += TEMIS_VALUES_PER_ROW * TEMIS_BIN_WIDTH
+
+    return result
+
+
+# create subset
