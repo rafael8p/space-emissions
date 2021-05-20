@@ -1,14 +1,9 @@
 # -*- coding: utf-8 -*-
 """Fioletov functions"""
-import os.path
-import shutil
-import gzip
-import threading
 from datetime import date, timedelta
 from urllib.request import urlretrieve
 
 import numpy
-from pandas import Series
 from shapely.geometry import MultiPolygon, shape
 from geopandas import GeoDataFrame, overlay
 
@@ -17,10 +12,13 @@ from eocalc.methods.base import EOEmissionCalculator, DateRange, Status
 import eocalc.methods.tools as tools
 
 # Local directory we use to store downloaded and decompressed data
+global LOCAL_DATA_FOLDER
 LOCAL_DATA_FOLDER = "/media/uba_emis/space_emissions/enrico/"
 # Local directory we use to store downloaded and decompressed data
+global LOCAL_ERA5_FOLDER 
 LOCAL_ERA5_FOLDER = "/media/uba_emis/space_emissions/enrico/ERA5/"
 # Local directory we use to store downloaded and decompressed data
+global LOCAL_S5P_FOLDER 
 LOCAL_S5P_FOLDER = "/codede/Sentinel-5P/"
 # Online resource used to download TEMIS data on demand
 # TODO! implement download tool from Janot

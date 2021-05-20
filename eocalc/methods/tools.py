@@ -1,12 +1,14 @@
 # -*- coding: utf-8 -*-
 # %%
 """Basic toolbox for space emission calculator used in emission calcs."""
+from eocalc.methods.fioletov import LOCAL_DATA_FOLDER
 import numpy as np
 import pandas as pd
 import scipy.special
 #import binas as binas
 import eocalc.methods.binas as binas
 import netCDF4
+from datetime import date, timedelta
 # formulas gaussian plumes
 # based on (Fioletov et al., 2017; Dammers et al., 2021)
 # https://acp.copernicus.org/articles/17/12597/2017/
@@ -155,31 +157,31 @@ def create_nc_file(filename,dimensions,datafields,datapackage):
 
 
 # read data
-def _assure_data_availability(day: date) -> str:
-    def is_gz_file(filepath):
-        with open(filepath, 'rb') as testfile:
-            return testfile.read(2) == b'\x1f\x8b'  # gzip 'magic number'
+def _assure_data_availability(region,resolution,day: date) -> str:
+    # check lon_min,lon_max,lat_min,lat_max
+    lon_min,lon_max = region.bounds[0:2]
+    lat_min,lat_max = region.bounds[2:4]
+    # check if subset is available, if not create
+    file = '%s/subset/no2_{day:%Y%m}.nc'%(LOCAL_DATA_FOLDER,lon_min,lon_max,lat_min,lat_max,resolution[0],resolution[1])
 
-    file = f"{LOCAL_DATA_FOLDER}/no2_{day:%Y%m}.asc"
+    # what does this do? check if its not open in another thread?
+    # with threading.Lock():
+    if not os.path.isfile(f"{file}"):
+        # create subset
+            urlretrieve(TEMIS_DOWNLOAD_URL % (f"{day:%Y}", f"{day:%m}", f"{day:%Y%m}"), f"{file}.original.gz")
 
-    with threading.Lock():
-        if not os.path.isfile(f"{file}"):
-            if not os.path.isfile(f"{file}.original.gz"):
-                # TODO Handle HTTP errors
-                urlretrieve(TEMIS_DOWNLOAD_URL % (f"{day:%Y}", f"{day:%m}", f"{day:%Y%m}"), f"{file}.original.gz")
-
-            # TODO Test this on different platforms, behaviours seem to differ!
-            with gzip.open(f"{file}.original.gz", 'rb') as compressed:
-                with open(f"{file}.gz", 'wb') as uncompressed:
+        # TODO Test this on different platforms, behaviours seem to differ!
+        with gzip.open(f"{file}.original.gz", 'rb') as compressed:
+            with open(f"{file}.gz", 'wb') as uncompressed:
+                shutil.copyfileobj(compressed, uncompressed)
+        if is_gz_file(f"{file}.gz"):
+            with gzip.open(f"{file}.gz", 'rb') as compressed:
+                with open(f"{file}", 'wb') as uncompressed:
                     shutil.copyfileobj(compressed, uncompressed)
-            if is_gz_file(f"{file}.gz"):
-                with gzip.open(f"{file}.gz", 'rb') as compressed:
-                    with open(f"{file}", 'wb') as uncompressed:
-                        shutil.copyfileobj(compressed, uncompressed)
-            else:
-                shutil.move(f"{file}.gz", f"{file}")
+        else:
+            shutil.move(f"{file}.gz", f"{file}")
 
-            # TODO Remove downloaded/intermediate files?
+        # TODO Remove downloaded/intermediate files?
 
     return file
 # check match with existing subsets
