@@ -146,3 +146,6 @@ def flatten_list(list_of_lists):
 
 # create basic emission fields from a inventory for comparison?
 
+# create subset
+
+# check match with existing subsets

@@ -2,19 +2,12 @@
 import unittest
 from datetime import date
 
-<<<<<<< HEAD
-from shapely.geometry import MultiPolygon, shape
-
-from eocalc.context import Pollutant
-from eocalc.methods.base import DateRange, Status, EOEmissionCalculator
-=======
 import numpy
 from pandas import Series
 from shapely.geometry import MultiPolygon, shape
 
 from eocalc.context import Pollutant, GNFR
 from eocalc.methods.base import DateRange, EOEmissionCalculator
->>>>>>> naive
 
 
 class TestBaseMethods(unittest.TestCase):
@@ -28,29 +21,20 @@ class TestBaseMethods(unittest.TestCase):
             DateRange(end="alice", start="bob")
 
         year2019 = DateRange("2019-01-01", "2019-12-31")
-<<<<<<< HEAD
-        self.assertEqual(year2019, DateRange(end="2019-12-31", start="2019-01-01"))
-        self.assertEqual(365, len(year2019))
-        self.assertEqual(year2019.__str__(), "[2019-01-01 to 2019-12-31, 365 days]")
-=======
         year2019b = DateRange(date.fromisoformat("2019-01-01"), date.fromisoformat("2019-12-31"))
         self.assertEqual(year2019, DateRange(end="2019-12-31", start="2019-01-01"))
         self.assertEqual(365, len(year2019))
         self.assertEqual(year2019.__str__(), "[2019-01-01 to 2019-12-31, 365 days]")
         self.assertEqual(year2019, year2019b)
->>>>>>> naive
 
         year2020 = DateRange("2020-01-01", "2020-12-31")
         self.assertNotEqual(year2019, year2020)
         self.assertEqual(366, len(year2020))
-<<<<<<< HEAD
-=======
         year2020b = DateRange("2020-01-01", "2020-12-31")
         self.assertEqual(year2020, year2020b)
 
         self.assertNotEqual(hash(year2019), hash(year2020))
         self.assertEqual(hash(year2020), hash(year2020b))
->>>>>>> naive
 
         august = DateRange("2018-08-01", "2018-08-31")
         self.assertEqual(31, len(august))
@@ -60,12 +44,9 @@ class TestBaseMethods(unittest.TestCase):
             count += 1
         self.assertEqual(31, count)
 
-<<<<<<< HEAD
-=======
         one_day = DateRange("2018-08-01", "2018-08-01")
         self.assertEqual(1, len(one_day))
 
->>>>>>> naive
         with self.assertRaises(ValueError):
             DateRange(start="2019-01-01", end="2018-12-31")
         with self.assertRaises(ValueError):
@@ -89,8 +70,6 @@ class TestBaseMethods(unittest.TestCase):
                       'coordinates': [[[[-180., -90.], [180., -90.], [180., 0.], [-180., 0.], [-180., -90.]]]]})
         self.assertTrue(calc.covers(identical))
 
-<<<<<<< HEAD
-=======
     def test_validate(self):
         calc = TestEOEmissionCalculator()
         region_covered = shape({'type': 'MultiPolygon', 'coordinates': [[[[0., 0.], [0., -1.], [-1., -1.], [-1., 0.], [0., 0.]]]]})
@@ -203,7 +182,6 @@ class TestBaseMethods(unittest.TestCase):
         self.assertEqual(2, len(EOEmissionCalculator._create_grid(fourth, 0.125, 0.125, snap=False)))
         self.assertEqual(6, len(EOEmissionCalculator._create_grid(fourth, 0.125, 0.125, snap=True)))
 
->>>>>>> naive
 
 class TestEOEmissionCalculator(EOEmissionCalculator):
 
@@ -212,11 +190,7 @@ class TestEOEmissionCalculator(EOEmissionCalculator):
 
     @staticmethod
     def minimum_area_size() -> int:
-<<<<<<< HEAD
-        return 0
-=======
         return 42
->>>>>>> naive
 
     @staticmethod
     def coverage() -> MultiPolygon:
@@ -225,21 +199,6 @@ class TestEOEmissionCalculator(EOEmissionCalculator):
 
     @staticmethod
     def minimum_period_length() -> int:
-<<<<<<< HEAD
-        return 0
-
-    @staticmethod
-    def earliest_start_date() -> date:
-        return date.fromisoformat("0001-01-01")
-
-    @staticmethod
-    def latest_end_date() -> date:
-        return date.fromisoformat("9999-12-31")
-
-    @staticmethod
-    def supports(pollutant: Pollutant) -> bool:
-        return pollutant is not None
-=======
         return 42
 
     @staticmethod
@@ -253,7 +212,6 @@ class TestEOEmissionCalculator(EOEmissionCalculator):
     @staticmethod
     def supports(pollutant: Pollutant) -> bool:
         return pollutant == Pollutant.NH3
->>>>>>> naive
 
     def run(self, region=None, period=None, pollutant=None) -> dict:
         return 42
