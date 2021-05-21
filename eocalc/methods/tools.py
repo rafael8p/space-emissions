@@ -1,7 +1,18 @@
 # -*- coding: utf-8 -*-
+# tools.py
+# build by Enrico Dammers (TNO, enrico.dammers@tno.nl)
+# last edited <_2020_08_12-03:29:22_AM > too lazy to update this
 # %%
+#  for testing move to other directory
+import os
+
+from pandas.core.base import DataError
+os.chdir('../../')
+
+
 """Basic toolbox for space emission calculator used in emission calcs."""
-from eocalc.methods.fioletov import LOCAL_DATA_FOLDER
+from re import sub
+from eocalc.methods.fioletov import *
 import numpy as np
 import pandas as pd
 import scipy.special
@@ -9,13 +20,21 @@ import scipy.special
 import eocalc.methods.binas as binas
 import netCDF4
 from datetime import date, timedelta
+import glob
+import matplotlib.dates as dates
+import datetime
+import time
+# fixed fileformat < batch tropomi obs in monthly 20x15 degree files
+interval_lon = 20
+interval_lat = 15
+
 # formulas gaussian plumes
 # based on (Fioletov et al., 2017; Dammers et al., 2021)
 # https://acp.copernicus.org/articles/17/12597/2017/
 # any location can be described as VCD(x,y) = sum(flow_contribution_i(x,y) * emis_i) + bias
 # for this we need VCD's, added windfields to calculate flow, and potential source locations (grid)
 # x,y are in km x km space, not degrees, so rotation and adjustment needed compared to lat lon.
-
+# %%
 # winddir/speed back to u,v 
 def winddir_speed_to_u_v(wind_spd, wind_dir):
     dir_rp1 = wind_dir * 2 * np.pi / 360.
@@ -154,58 +173,394 @@ def create_nc_file(filename,dimensions,datafields,datapackage):
 
 
 # create basic emission fields from a inventory for comparison?
-
-
-# read data
-def _assure_data_availability(region,resolution,day: date) -> str:
-    # check lon_min,lon_max,lat_min,lat_max
-    lon_min,lon_max = region.bounds[0:2]
-    lat_min,lat_max = region.bounds[2:4]
-    # check if subset is available, if not create
-    file = '%s/subset/no2_{day:%Y%m}.nc'%(LOCAL_DATA_FOLDER,lon_min,lon_max,lat_min,lat_max,resolution[0],resolution[1])
-
-    # what does this do? check if its not open in another thread?
-    # with threading.Lock():
-    if not os.path.isfile(f"{file}"):
-        # create subset
-            urlretrieve(TEMIS_DOWNLOAD_URL % (f"{day:%Y}", f"{day:%m}", f"{day:%Y%m}"), f"{file}.original.gz")
-
-        # TODO Test this on different platforms, behaviours seem to differ!
-        with gzip.open(f"{file}.original.gz", 'rb') as compressed:
-            with open(f"{file}.gz", 'wb') as uncompressed:
-                shutil.copyfileobj(compressed, uncompressed)
-        if is_gz_file(f"{file}.gz"):
-            with gzip.open(f"{file}.gz", 'rb') as compressed:
-                with open(f"{file}", 'wb') as uncompressed:
-                    shutil.copyfileobj(compressed, uncompressed)
-        else:
-            shutil.move(f"{file}.gz", f"{file}")
-
-        # TODO Remove downloaded/intermediate files?
-
-    return file
-# check match with existing subsets
-def _read_subset_data(region: MultiPolygon, file: str) -> ():
+@staticmethod
+def _read_subset_data(region: MultiPolygon, filelist: list):
     # TODO Make this work with regions wrapping around to long < -180 or long > 180?
     min_lat, max_lat = region.bounds[1] - region.bounds[1] % TEMIS_BIN_WIDTH, region.bounds[3]
     min_long, max_long = region.bounds[0] - region.bounds[0] % TEMIS_BIN_WIDTH,  region.bounds[2]
 
-    result = []
+    datap = pd.DataFrame()
+    
 
-    with open(file, 'r') as data:
-        lat = -91
-        for line in data:
-            if line.startswith("lat="):
-                lat = float(line.split('=')[1]) - TEMIS_BIN_WIDTH / 2
-                offset = -180  # We need to go from -180° to +180° for each latitude
-            elif min_lat <= lat < max_lat and line[:4].strip().lstrip('-').isdigit():
-                for count, long in enumerate(offset + x * TEMIS_BIN_WIDTH for x in range(TEMIS_VALUES_PER_ROW)):
-                    if min_long <= long < max_long:
-                        emission = int(line[count * 4:count * 4 + 4])  # All emission values are four digits wide
-                        result += [emission] if emission > TEMIS_NAN_VALUE else [numpy.NaN]
-                offset += TEMIS_VALUES_PER_ROW * TEMIS_BIN_WIDTH
+    return datap
 
-    return result
 
+# read data
+def _assure_data_availability(region,day: date,force_rebuild = False, force_pass = False,satellite_name = 'Tropomi') -> str:
+    # check lon_min,lon_max,lat_min,lat_max
+    # (5.872058868408317, 47.26990127563522, 15.028479576110897, 55.05652618408209)
+    # basic patterns
+    lon_min,lon_max = region.bounds[0], region.bounds[2] #lons
+    lat_min,lat_max = region.bounds[1], region.bounds[3] #lats
+    # TODO propose to save all files in 20 longitudex15latitude blocks... 
+    # removes the need for a lot of redoing files, creates a regularized setup
+    # 
+    # check if subset is available, if not create
+    # find all
+    subset_files = glob.glob(LOCAL_DATA_FOLDER + 'subsets/%s.nc')
+    # select files within period
+    subset_files = [fil for fil in subset_files if f'{day:%Y%m}' in fil]
+    
+    # filter files by latlon   
+    subset_files = filter_files_by_latlon(subset_files,[lat_min,lat_max],[lon_min,lon_max])
+    # TODO check what number of files is expected:
+    lon0 = int(lon_min / 20)
+    lon1 = int(lon_max / 20) +1
+    lat0 = int(lat_max / 15)
+    lat1 = int(lat_max / 15) +1
+    files_tot = (lon1-lon0)*(lat1-lat0)
+    # expected files
+    expected_files = []
+    for ilo in range(lon0,lon1):
+        for ila in range(lat0,lat1):
+            # test
+            lonp_0 = ('p%2.2f'%(lon0*interval_lon)).replace('.','_').replace('p-','n')
+            lonp_1 = ('p%2.2f'%(lon0*interval_lon)).replace('.','_').replace('p-','n')
+            latp_0 = ('p%2.2f'%(lon0*interval_lat)).replace('.','_').replace('p-','n')
+            latp_1 = ('p%2.2f'%(lon0*interval_lat)).replace('.','_').replace('p-','n')
+            latlonpatter = '%s_%s_%s_%s'%(lonp_0,lonp_1,latp_0,latp_1)
+            # pattern should be like p000_0_p020_0_p045_0_p060_0 with p postiive and n negative
+            expected_files.append(LOCAL_SUBSET_FOLDER + '%s_coor_%s_date_'%(satellite_name,latlonpatter) + '{day:%Y%m}.nc')
+
+    # find what missing?
+    files_missing = list(set(expected_files) - set(subset_files))
+    if force_rebuild is True:
+        files_missing = expected_files
+    for fil in files_missing:
+        [[dminlon, dmaxlon], [dminlat, dmaxlat]] = latlon_fromfile(fil)
+        # what does this do? check if its not open in another thread?
+        # with threading.Lock():
+        status = create_subset(fil,dminlon, dmaxlon,dminlat, dmaxlat,day)
+        if status == 0:
+            # check that file is there
+            if os.path.isfile(fil) is not True:
+                print('faulty file check status',fil)
+                raise FileNotFoundError
+
+    
+    # TODO check if subset_files contains files
+    
+    # TODO pass remaining files? or expected?
+    # file_name = '%s/subset/no2_coor_pattern_date_{day:%Y%m}.nc'%(LOCAL_DATA_FOLDER,lon_min_f,lon_max_f,lat_min_f,lat_max_f,resolution[0],resolution[1])
+    
+
+    return expected_files
+
+def filter_files_by_latlon(files, lat_range, lon_range):
+    '''
+    from CDF_tools.py @ CrIS dev package ECCC
+    Function that filters through lists of files by lat/lon
+    '''
+    lat_range = lat_range if lat_range[0] is not None else [-90, 90]
+    lon_range = lon_range if lon_range[0] is not None else [-180, 180]
+
+    # Lat and Lon ranges
+    minlat, maxlat = lat_range
+    minlon, maxlon = lon_range
+
+    # Initialize list
+    filtdirs = []
+
+    # Loop over directories
+    for directory in files:
+        # Get range using function from retv_functions
+        [[dminlon, dmaxlon], [dminlat, dmaxlat]] = latlon_fromfile(directory)
+
+        # Check to see if it is OUTSIDE range
+        if ((dminlat <= minlat and dmaxlat <= minlat) or
+                (dminlon <= minlon and dmaxlon <= minlon) or
+                (dminlat >= maxlat and dmaxlat >= maxlat) or
+                (dminlon >= maxlon and dmaxlon >= maxlon)):
+            # SKIP -- Outside range
+            continue
+        else:
+            # Add to final list
+            filtdirs.append(directory)
+    # TODO make it smart enough to accept multiple pieces of old files?
+    return filtdirs
+
+def latlon_fromfile(directory):
+    '''
+    from CDF_tools.py @ CrIS dev package ECCC
+    Makes a list of the lat range and lon range from parsing directory path
+    '''
+    import re
+    # splitind = -6 if "cdf" in directory[-5:] else -5
+    latlon_str = directory.split('coor_')[-1].split('_date_')[0]#re.split("/", directory)[splitind]
+    # pattern should be like p000_0_p020_0_p045_0_p060_0 with p postiive and n negative
+    # West,east,south,north
+    latlon_regex = "[p|n]_*_*_*_*_*_*_*"
+    if re.search(latlon_regex, latlon_str):
+        empty, minlon, maxlon, minlat, maxlat = re.split(".p|.n|p|n", latlon_str.replace("_", ".").replace("n", "n-"))
+        lat_range, lon_range = [[float(minlat), float(maxlat)], [float(minlon), float(maxlon)]]
+    else:
+        print('faulty pattern',)
+        raise ValueError
+        # lat_range, lon_range = [[-90, 90], [-180, 180]]
+    return lon_range, lat_range
 
 # create subset
+def create_subset(filename,west, east,south, north,month_date):
+    """
+    # TODO add nice text
+    """
+    print('Create subset.., step: Reading Datafiles....')
+    # TropomiOFFLovp_NO2_None_01_Europe_201805_v.nc
+    print('region',west,east,south,north,'%2.4i/%2.2i/'%(month_date.year,month_date.month))
+    # weird ass format for directories
+    start = datetime.datetime(month_date.year,month_date.month,1)
+    month = month_date.month+1
+    year = month_date.year
+    if month == 13:
+        month = 1
+        year = month_date.year + 1
+    end = datetime.datetime(year,month,1)
+    print('search pattern',LOCAL_S5P_FOLDER + '/' +  satellite_name + '/' +  satellite_product + '/' + f'{month_date:%Y/%m}/*/*/*nc')
+    files_to_read = glob.glob(LOCAL_S5P_FOLDER + '/' +  satellite_name + '/' +  satellite_product + '/' + f'{month_date:%Y/%m}/??/S5P*/*nc')
+    if len(files_to_read) == 0:
+        print('missing files, check path')
+        raise FileNotFoundError
+    new_df = pd.DataFrame()
+    print('files to read:', len(files_to_read))
+    for idx, filename in enumerate(files_to_read):
+        print('reading', filename)
+        nc = netCDF4.Dataset(filename)
+        # variab = nc.variables.keys()
+        variab_lib = {lon_var:'PRODUCT/longitude',
+                       lat_var:'PRODUCT/latitude',
+                       'footprint_lon':'PRODUCT/SUPPORT_DATA/GEOLOCATIONS/longitude_bounds',
+                       'footprint_lat':'PRODUCT/SUPPORT_DATA/GEOLOCATIONS/latitude_bounds',
+                       'vcd':'PRODUCT/nitrogendioxide_tropospheric_column',
+                       'vcd_err':'PRODUCT/nitrogendioxide_tropospheric_column_precision_kernel',
+                       'surface_pressure':'PRODUCT/SUPPORT_DATA/INPUT_DATA/surface_pressure',
+                       'quality_value':'PRODUCT/qa_value',
+                       'cloud_fraction':'PRODUCT/SUPPORT_DATA/DETAILED_RESULTS/cloud_fraction_crb_nitrogendioxide_window',
+                       'time':'PRODUCT/time'}
+        
+        for key_ind,key in enumerate(variab_lib.keys()):
+            print('Reading variable: %s' % key)
+            # key_ind = variab.index(key)
+            if key_ind == 0:
+                dat_read = nc[variab_lib[key]][:]
+                if (len(np.shape(dat_read)) == 3) and (np.shape(dat_read)[0]==1):
+                    datap = pd.DataFrame(dat_read.ravel(), columns=[key])
+                elif (len(np.shape(dat_read)) == 4) and (np.shape(dat_read)[0]==1):
+                    datap = pd.DataFrame(dat_read.ravel(), columns=[key])
+                # datap = pd.DataFrame(nc.variables[variab_lib[key]][:], columns=[key])
+                else:
+                    print('unexpected dimension',np.shape(dat_read),key)
+                    raise DataError
+                
+            else:
+                if key == 'footprint_lon' or key == 'footprint_lat':
+                    datap[key] = [uu for uu in nc[variab_lib[key]][:].T]
+                    # datap[key] = [uu for uu in nc.variables[variab_lib[key]][:].T]
+                elif key == 'time':
+                    stime = datetime.datetime.strptime(nc[variab_lib[key]].getncattr('units')[14:],'%Y-%m-%d 00:00:00')
+                    # stime = datetime.datetime.strptime(nc.variables[variab_lib[key]].getncattr('units')[14:],'%Y-%m-%d 00:00:00')
+                    dt = nc[variab_lib[key]][:]
+                    # dt = nc.variables[variab_lib[key]][:]
+                    datap[key] = [stime + timedelta(seconds =uu) for uu in dt]
+                else:
+                    datap[key] = [uu for uu in nc[variab_lib[key]][:]]
+                    # datap[key] = [uu for uu in nc.variables[variab_lib[key]][:]]
+        # cap to sides of domain
+        new_df_tmp = datap[
+            ((datap[lon_var] >= west) & (datap[lon_var] < east) & (datap[lat_var] >= south) & (
+                    datap[lat_var] < north))]
+        # ensure observations fall within designated time (UTC)
+        new_df_tmp_fin = new_df_tmp[((new_df_tmp.time >= start) & (new_df_tmp.time < end))]
+        # append to final array
+        if len(new_df_tmp_fin) > 0:
+            new_df = new_df.append(new_df_tmp_fin)
+            print(new_df_tmp_fin.shape, filename, 'done', start, end, new_df_tmp_fin['time'].min(), new_df_tmp_fin[
+                'time'].max(), new_df_tmp_fin['time'].iloc[0])
+        else:
+            print(new_df_tmp_fin.shape, filename, 'done')
+        # keep last file open to copy paste dimensions and TODO attributes from
+        if idx != len(files_to_read) - 1:
+            nc.close()
+    print(new_df.shape, filename, 'all files done', new_df['time'].min(), new_df['time'].max())
+    if not ('u' in variab_lib.keys() or 'v' in variab_lib.keys()):
+        # add meteo
+        new_df = add_u_v_data(LOCAL_ERA5_FOLDER, start, end, new_df, lat_var, lon_var)
+        print('example u', new_df.u.values[0:10])
+        print('example v', new_df.v.values[0:10])
+    # create new file
+    print('Creating subset....')
+    nc_new = netCDF4.Dataset(filename, 'w')
+    # TODO add attributes
+    for dim in nc.dimensions:
+        if 'points' not in dim:
+            nc_new.createDimension(dim, nc.dimensions[dim].size)
+        else:
+            nc_new.createDimension(dim, len(new_df))
+    # for vari in nc.variables:
+    for vari in list(new_df.keys()):
+        try:
+            var_tmp = nc_new.createVariable(vari, nc.variables[vari].dtype, nc.variables[vari].dimensions)
+            for attri in nc.variables[vari].ncattrs():
+                var_tmp.setncattr(attri,nc.variables[vari].getncattr(attri))
+        except:
+            # adding the new variables, with fixed obs length, drag in from lon_var
+            # TODO add attributes
+            var_tmp = nc_new.createVariable(vari, nc.variables[lon_var].dtype, nc.variables[lon_var].dimensions)
+        if vari != 'time':
+            # TODO add attributes
+            var_tmp[:] = np.array([uu for uu in new_df[vari]])
+        else:
+            # TODO add attributes
+            var_tmp[:] = dates.date2num(np.array([uu for uu in new_df[vari]]))
+    nc_new.close()
+    nc.close()
+    status = 0
+    return status
+
+def add_u_v_data(era_path, start, end, datas, lat_var_name, lon_var_name):
+    """
+    # Based on add_meteo @ dev package ECCC
+    
+    """
+    print('Adding ERA5 u,v...')
+    ndays = (end - start).days
+    date_inter = start
+    datas.loc[:, 'u'] = 0.0
+    datas.loc[:, 'v'] = 0.0
+    datas.loc[:, 'windspeed'] = 0.0
+    datas.loc[:, 'winddirec_direct'] = 0.0
+    datas.loc[:, 'hh'] = [tt.hour for tt in datas.time]
+    datas.loc[:, 'minmin'] = [tt.minute for tt in datas.time]
+    datas.loc[:, 'hh_int'] = np.rint(datas['hh']).astype(int)
+    print(datas.iloc[0])
+    s_t = time.time()
+    for dd in range(ndays):
+        print('matching', date_inter)
+        # dates def for use
+        next_date = date_inter + datetime.timedelta(1)
+        date_today = '%2.4i%2.2i%2.2i' % (date_inter.year, date_inter.month, date_inter.day)
+        era_file_to_read = era_path + date_today[0:4] + '/' + 'ECMWF_ERA5_uv_%s.nc'%date_today
+        if not os.path.isfile():
+            print('file missing',era_file_to_read)
+            print('Download the ERA5 data....then restart')
+            raise IOError
+        else:
+            ncera = netCDF4.Dataset(era_file_to_read)
+        # calc longitude latitude positions in grid
+        lonstep, latstep = np.round(np.abs(np.diff(ncera['longitude'][:2])), 3)[0], \
+                           np.round(np.abs(np.diff(ncera['latitude'][:2])), 3)[0]  # 0.25, 0.25 resolution
+        # select all obs for this day 
+        sel = ((dates.date2num(datas.time) >= dates.date2num(date_inter)) & (dates.date2num(datas.time) < dates.date2num(next_date)))
+        print('adding ERA5', era_path + 'ERA5/nc/' + date_today[
+                                                     0:4] + '/' + 'ECMWF_ERA5_uv_' + date_today + '.nc', np.shape(
+            np.where(sel)), int(time.time() - s_t), 'seconds_passed')
+        if len(np.where(sel)[0]) != 0:
+            # for now quick interpolation
+            # TODO later add surface pressure level dependent meteo
+            dataout = interpolate_meteo(datas[lon_var_name][sel].values, datas[lat_var_name][sel].values,
+                                          datas['hh'][sel].values + datas['minmin'][sel].values / 60., lonstep, latstep,
+                                          ncera)#,ncera_v)
+            dataout.loc[:, 'windspeed'] = np.sqrt(dataout['u'].values ** 2 + dataout['v'].values ** 2)
+            dataout.calc_wind_direction[:, 'winddirec_direct'] = np.array(
+                [calc_wind_direction(u1, v1) for u1, v1 in zip(dataout['u'].values, dataout['v'].values)])
+            # print('testje1', np.max(datas['u'].values), np.max(datas['v'].values)
+            datas.loc[sel, 'u'] = dataout['u'].values.copy()
+            datas.loc[sel, 'v'] = dataout['v'].values.copy()
+            # print('testje2',np.max(datas['u'].values),np.max(datas['v'].values)
+            datas.loc[sel, 'windspeed'] = dataout['windspeed'].values
+            datas.loc[sel, 'winddirec_direct'] = dataout['winddirec_direct'].values
+        ncera.close()
+        # ncera_v.close()
+        
+        date_inter += datetime.timedelta(1)
+    # quick checkup
+    print('here era5', dataout.winddirec_direct.min(), dataout.winddirec_direct.max())
+    return datas
+
+
+def interpolate_meteo(pixlon, pixlat, hh, lon_dx, lat_dx, ancdata):
+    '''Interpolate a dataset from regular grid to tropomi center positions
+    # TODO add interpolation following footprint shape? 
+    # TODO add triangulation algorithm Segers?
+    # TODO replace for scipy RGI interpolation?
+    # Based on NN_regular_multiday.py @ dev package ECCC
+    Args
+    ----
+    pixlon : numpy.ndarray of float
+        Numpy array of floats representing the longitudinal coordinates
+    pixlat : numpy.ndarray of float
+        Numpy array of floats representing the latitudinal coordinates
+    hh : numpy.ndarray of float
+        Numpy array of floats representing the hour of the day 0-23
+    lon_dx : float
+        The regular longitudinal stepsize of the dataset
+    lat_dx : float
+        The regular latitudinal stepsize of the dataset
+    ancdata : netCDF instance
+        the dataset to be interpolated to the pixel footprints/centerpoints
+
+    Returns
+    -------
+    data_uv : pandas dataframe 2,N [u,v]
+        The interpolated values of the ancillary data, projected onto the
+        given tropOMI dataset.
+
+
+    '''
+    # s_t_t = time.time()
+    # ensure float
+    pixlon = float(pixlon)
+    pixlat = float(pixlat)
+
+    # 0-360 domain argh
+    pixlon = pixlon % 360
+    lon_m = (pixlon % lon_dx)
+    lat_m = (pixlat % lat_dx)
+
+    lon_w = np.where(2 * lon_m <= lon_dx, pixlon, pixlon + lon_dx)
+    lat_w = np.where(2 * lat_m <= lat_dx, pixlat, pixlat + lat_dx)
+
+    lon_r = (lon_w - lon_m)  # era is from 0-360, tropomi is from -180 to 180
+    lat_r = (lat_w - lat_m)
+    
+    print('reading u/v')
+    # downlaoded in steps of 50hpa.
+    #  0:7 is 1000hpa to 700 
+    ancdatau_zero = ancdata.variables['u'][:]  
+    ancdatav_zero = ancdata.variables['v'][:]  
+    print('done reading u/v')
+    # get nlat/nlon, domain
+    nlat = len(ancdata.variables['latitude'][:])
+    nlon = len(ancdata.variables['longitude'][:])
+    lon_ind_1 = np.round(lon_r / lon_dx).astype(int)
+    lat_ind_1 = np.round(-lat_r / lat_dx + (nlat / 2)).astype(int)
+    # get indices.
+    lat_ind = np.maximum(np.minimum(lat_ind_1, nlat - 1), 0)
+    lon_ind = np.maximum(np.minimum(lon_ind_1, nlon - 1), 0)
+
+    closest = np.round(hh).astype(int)
+    closest = np.minimum(np.array(closest), 23)
+    closest2 = np.minimum(np.array(closest) + 1, 23)
+    # nearest
+    # TODO replace for rgi.interpolation?
+    closestmin = (hh - closest) * 60
+    # TODO We take the lowest 3 layers for now... change to surface pressure based 
+    data_to_frame = np.array(
+        [[np.mean(((60 - np.array(closestmin_tmp)) / 60. * ancdatau_zero[closest_tmp, :3, lat_ind_tmp, lon_ind_tmp]) + (
+                (np.array(closestmin_tmp)) / 60. * ancdatau_zero[closest_tmp2, :3, lat_ind_tmp, lon_ind_tmp])) * 3.6,
+          np.mean(((60 - np.array(closestmin_tmp)) / 60. * ancdatav_zero[closest_tmp, :3, lat_ind_tmp, lon_ind_tmp]) + (
+                  (np.array(closestmin_tmp)) / 60. * ancdatav_zero[closest_tmp2, :3, lat_ind_tmp, lon_ind_tmp])) * 3.6]
+         for
+         closestmin_tmp, closest_tmp, closest_tmp2, lat_ind_tmp, lon_ind_tmp in
+         zip(closestmin, closest, closest2, lat_ind, lon_ind)])
+    datap = pd.DataFrame(data_to_frame.astype(float), columns=['u', 'v'])
+    return datap
+
+
+
+if __name__ == "__main__":
+    # %%
+    # test operations?
+    print('test globals',LOCAL_DATA_FOLDER)
+
+
+# %%

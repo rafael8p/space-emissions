@@ -4,8 +4,8 @@
 import os
 import json
 import time
-from datetime import datetime
-
+# from datetime import datetime
+import datetime
 import pandas
 import geopandas
 from shapely.geometry import shape
@@ -14,23 +14,36 @@ from eocalc.context import Pollutant
 from eocalc.methods.base import DateRange
 from eocalc.methods.tools import *
 from eocalc.methods.fioletov import *
-
+import time
 # %%
 # time test
 s_t = time.time()
 # select region for test
-directory = "data/regions"
+directory = "/home/enrico/dammerse_tno/space-emissions/data/regions/"
 regions = {}
 
 for filename in os.listdir(directory):
-    if (filename.endswith(".geo.json") or filename.endswith(".geojson") and ('germany.geo.json' in filename)):
+    if ((filename.endswith(".geo.json") or filename.endswith(".geojson")) and ('germany.geo.json' in filename)):
         with open(f"{directory}/{filename}", 'r') as geojson_file:
             regions[filename] = shape(json.load(geojson_file)["geometry"])
 
-# del regions["europe.geo.json"] # Uncomment if this takes too long...
+# first region test
+region = regions[next(iter(regions))]
+bounds = region.bounds
+# %%
+# results test
+results = {} # results will be put here as results[<filename>][<data>]
+start = datetime.datetime.now()
 
-# Remove regions not covered
-regions = {filename: region for filename, region in regions.items() if TropomiMonthlyMeanAggregator.covers(region)}
+for filename, region in regions.items():
+    results[filename] = MultiSourceCalculator().run(region, DateRange(start='2019-06-01', end='2019-06-30'), Pollutant.NO2)
+    print(f"Done with region represented by file '{filename}'")
+
+print(f"All finished in {datetime.datetime.now()-start}.")
+
+# # %%
+# # Remove regions not covered
+# regions = {filename: region for filename, region in regions.items() if MultiSourceCalculator.covers(region)}
 
 # %%
 

@@ -20,11 +20,30 @@ LOCAL_ERA5_FOLDER = "/media/uba_emis/space_emissions/enrico/ERA5/"
 # Local directory we use to store downloaded and decompressed data
 global LOCAL_S5P_FOLDER 
 LOCAL_S5P_FOLDER = "/codede/Sentinel-5P/"
+# Local directory we use to store subsets
+global LOCAL_SUBSET_FOLDER 
+LOCAL_SUBSET_FOLDER = "/media/uba_emis/space_emissions/enrico/subsets/"
+# Satellite Name
+global satellite_name 
+satellite_name = "TROPOMI"
+# TODO replace as choice, for now fixed
+global satellite_product
+satellite_product = "L2__NO2___"
+global lon_var
+lon_var = 'Longitude'
+global lat_var
+lat_var = 'Latitude'
 # Online resource used to download TEMIS data on demand
 # TODO! implement download tool from Janot
 # Scitools.sh/python version
+global resolution_lat
+global resolution_lon
 resolution_lon, resolution_lat = 0.2,0.2
 class MultiSourceCalculator(EOEmissionCalculator):
+
+    @staticmethod
+    def minimum_area_size() -> int:
+        return 10**4
 
     @staticmethod
     def coverage() -> MultiPolygon:
@@ -57,41 +76,38 @@ class MultiSourceCalculator(EOEmissionCalculator):
         
         # 1. Create a field of sources
         # TODO allow for domain of higher resolution within a coarser set. For example germany at 0.1 with surroundings at 0.2
-        grid = self._create_grid(region, resolution[0], resolution[1], snap=True, include_center_cols=True)
+        # grid = self._create_grid(region, resolution[0], resolution[1], snap=True, include_center_cols=True)
 
-        # 2. Read TEMIS data into the grid, use cache to avoid re-reading the file for each day individually
+        # 2. Read TROPOMI data into the grid, use cache to avoid re-reading the file for each day individually
         cache = {}
         for day in period:
             month_cache_key = f"{day:%Y-%m}"
             if month_cache_key not in cache.keys():
-                concentrations = tools._read_subset_data(region, tools._assure_data_availability(region,period))
-                # value [1/cm²] * TEMIS scale [1] / Avogadro constant [1] * NO2 molecule weight [g] / to [kg] * to [km²]
-                cache[month_cache_key] = [x * 10**13 / (6.022 * 10**23) * 46.01 / 1000 * 10**10 for x in concentrations]
-                # TODO Correct for pollutant atmosphere lifetime and diurnal variation: pollutant.atmo_lifetime(day, latitude) * pollutant.diurnal_variation(day, instrument)
+                concentrations = tools._read_subset_data(region, tools._assure_data_availability(region,day))#period))
 
-            # Here, values are actually [kg/km²], but the area [km²] cancels out below
-            grid.insert(0, f"{day} {pollutant.name} emissions [kg]", cache[month_cache_key])
+
+
 
         # 3. Clip to actual region and add a data frame column with each cell's size
-        grid = overlay(grid, GeoDataFrame({'geometry': [region]}, crs="EPSG:4326"), how='intersection')
-        grid.insert(0, "Area [km²]", grid.to_crs(epsg=8857).area / 10 ** 6)  # Equal earth projection
+        # grid = overlay(grid, GeoDataFrame({'geometry': [region]}, crs="EPSG:4326"), how='intersection')
+        # grid.insert(0, "Area [km²]", grid.to_crs(epsg=8857).area / 10 ** 6)  # Equal earth projection
 
-        # 4. Update emission columns by multiplying with the area value and sum it all up
-        grid.iloc[:, -(len(period)+3):-3] = grid.iloc[:, -(len(period)+3):-3].mul(grid["Area [km²]"], axis=0)
-        grid.insert(1, f"Total {pollutant.name} emissions [kg]", grid.iloc[:, -(len(period)+3):-3].sum(axis=1))
-        grid.insert(2, "Umin [%]", numpy.NaN)
-        grid.insert(3, "Umax [%]", numpy.NaN)
-        grid.insert(4, "Number of values [1]", len(period))
-        grid.insert(5, "Missing values [1]", grid.iloc[:, -(len(period)+3):-3].isna().sum(axis=1))
-        self._calculate_row_uncertainties(grid, period)  # Replace NaNs in Umin/Umax cols with actual values
+        # # 4. Update emission columns by multiplying with the area value and sum it all up
+        # grid.iloc[:, -(len(period)+3):-3] = grid.iloc[:, -(len(period)+3):-3].mul(grid["Area [km²]"], axis=0)
+        # grid.insert(1, f"Total {pollutant.name} emissions [kg]", grid.iloc[:, -(len(period)+3):-3].sum(axis=1))
+        # grid.insert(2, "Umin [%]", numpy.NaN)
+        # grid.insert(3, "Umax [%]", numpy.NaN)
+        # grid.insert(4, "Number of values [1]", len(period))
+        # grid.insert(5, "Missing values [1]", grid.iloc[:, -(len(period)+3):-3].isna().sum(axis=1))
+        # self._calculate_row_uncertainties(grid, period)  # Replace NaNs in Umin/Umax cols with actual values
 
-        # 5. Add GNFR table incl. uncertainties
-        table = self._create_gnfr_table(pollutant)
-        total_uncertainty = self._combine_uncertainties(grid.iloc[:, 1], grid.iloc[:, 2])
-        table.iloc[-1] = [grid.iloc[:, 1].sum() / 10**6, total_uncertainty, total_uncertainty]
+        # # 5. Add GNFR table incl. uncertainties
+        # table = self._create_gnfr_table(pollutant)
+        # total_uncertainty = self._combine_uncertainties(grid.iloc[:, 1], grid.iloc[:, 2])
+        # table.iloc[-1] = [grid.iloc[:, 1].sum() / 10**6, total_uncertainty, total_uncertainty]
 
-        self._state = Status.READY
-        return {self.TOTAL_EMISSIONS_KEY: table, self.GRIDDED_EMISSIONS_KEY: grid}
+        # self._state = Status.READY
+        return #{self.TOTAL_EMISSIONS_KEY: table, self.GRIDDED_EMISSIONS_KEY: grid}
 
 
     # operations for class / or functions to fit emissions using fioletov approach
