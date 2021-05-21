@@ -15,7 +15,7 @@ from eocalc.methods.base import DateRange
 from eocalc.methods.tools import *
 from eocalc.methods.fioletov import *
 import time
-# %%
+### %%
 # time test
 s_t = time.time()
 # select region for test
@@ -30,13 +30,13 @@ for filename in os.listdir(directory):
 # first region test
 region = regions[next(iter(regions))]
 bounds = region.bounds
-# %%
+## %%
 # results test
 results = {} # results will be put here as results[<filename>][<data>]
 start = datetime.datetime.now()
 
 for filename, region in regions.items():
-    results[filename] = MultiSourceCalculator().run(region, DateRange(start='2019-06-01', end='2019-06-30'), Pollutant.NO2)
+    results[filename] = MultiSourceCalculator().run(region, DateRange(start='2019-06-01', end='2019-06-02'), Pollutant.NO2)
     print(f"Done with region represented by file '{filename}'")
 
 print(f"All finished in {datetime.datetime.now()-start}.")

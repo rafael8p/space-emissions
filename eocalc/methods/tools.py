@@ -164,24 +164,32 @@ def multi_helper(args):
 def flatten_list(list_of_lists):
     return [item for sublist in list_of_lists for item in sublist]
 
-# make nc file for list of variables, dimensions, attributes
-def create_nc_file(filename,dimensions,datafields,datapackage):
-
-    abc = netCDF4.Dataset(filename,'w')
-    for dim in dimensions:
-        abc.createD
-
-
 # create basic emission fields from a inventory for comparison?
 @staticmethod
 def _read_subset_data(region: MultiPolygon, filelist: list):
     # TODO Make this work with regions wrapping around to long < -180 or long > 180?
-    min_lat, max_lat = region.bounds[1] - region.bounds[1] % TEMIS_BIN_WIDTH, region.bounds[3]
-    min_long, max_long = region.bounds[0] - region.bounds[0] % TEMIS_BIN_WIDTH,  region.bounds[2]
-
+    min_lat, max_lat = region.bounds[1], region.bounds[3]
+    min_long, max_long = region.bounds[0], region.bounds[2]
     datap = pd.DataFrame()
-    
-
+    # turn into xarray concate?
+    for fil in filelist:
+        nc = netCDF4.Dataset(fil)
+        # ensure datap is available even when file empty
+        datap_tmp = pd.DataFrame()
+        for idx,vari in enumerate(nc.variables.keys()):
+            if idx==0:
+                datap_tmp = pd.DataFrame(nc[vari][:],columns=[vari])
+            else:
+                try:
+                    datap_tmp[vari] = nc[vari][:]
+                except:
+                    # 2d and more cases
+                    datap_tmp[vari] = [uu for uu in nc[vari][:]]
+        # becomes slow, better with xarray
+        datap = datap.append(data_tmp[((datap[lon_var]>=min_long)&
+                                       (datap[lon_var]<max_long)&
+                                       (datap[lat_var]>=min_lat)&
+                                       (datap[lat_var]<max_lat))])
     return datap
 
 
@@ -215,12 +223,12 @@ def _assure_data_availability(region,day: date,force_rebuild = False, force_pass
         for ila in range(lat0,lat1):
             # test
             lonp_0 = ('p%2.2f'%(lon0*interval_lon)).replace('.','_').replace('p-','n')
-            lonp_1 = ('p%2.2f'%(lon0*interval_lon)).replace('.','_').replace('p-','n')
-            latp_0 = ('p%2.2f'%(lon0*interval_lat)).replace('.','_').replace('p-','n')
-            latp_1 = ('p%2.2f'%(lon0*interval_lat)).replace('.','_').replace('p-','n')
+            lonp_1 = ('p%2.2f'%((lon0+1)*interval_lon)).replace('.','_').replace('p-','n')
+            latp_0 = ('p%2.2f'%(lat0*interval_lat)).replace('.','_').replace('p-','n')
+            latp_1 = ('p%2.2f'%((lat0+1)*interval_lat)).replace('.','_').replace('p-','n')
             latlonpatter = '%s_%s_%s_%s'%(lonp_0,lonp_1,latp_0,latp_1)
             # pattern should be like p000_0_p020_0_p045_0_p060_0 with p postiive and n negative
-            expected_files.append(LOCAL_SUBSET_FOLDER + '%s_coor_%s_date_'%(satellite_name,latlonpatter) + '{day:%Y%m}.nc')
+            expected_files.append(LOCAL_SUBSET_FOLDER + '%s_coor_%s_date_'%(satellite_name,latlonpatter) + f'{day:%Y%m}.nc')
 
     # find what missing?
     files_missing = list(set(expected_files) - set(subset_files))
@@ -300,10 +308,11 @@ def latlon_fromfile(directory):
     return lon_range, lat_range
 
 # create subset
-def create_subset(filename,west, east,south, north,month_date):
+def create_subset(filename_out,west, east,south, north,month_date):
     """
     # TODO add nice text
     """
+    # TODO add test catch all for input 
     print('Create subset.., step: Reading Datafiles....')
     # TropomiOFFLovp_NO2_None_01_Europe_201805_v.nc
     print('region',west,east,south,north,'%2.4i/%2.2i/'%(month_date.year,month_date.month))
@@ -316,70 +325,102 @@ def create_subset(filename,west, east,south, north,month_date):
         year = month_date.year + 1
     end = datetime.datetime(year,month,1)
     print('search pattern',LOCAL_S5P_FOLDER + '/' +  satellite_name + '/' +  satellite_product + '/' + f'{month_date:%Y/%m}/*/*/*nc')
-    files_to_read = glob.glob(LOCAL_S5P_FOLDER + '/' +  satellite_name + '/' +  satellite_product + '/' + f'{month_date:%Y/%m}/??/S5P*/*nc')
+    # files_to_read = glob.glob(LOCAL_S5P_FOLDER + '/' +  satellite_name + '/' +  satellite_product + '/' + f'{month_date:%Y/%m}/??/S5P*/*nc')
+    files_to_read = glob.glob(LOCAL_S5P_FOLDER + '/' +  satellite_name + '/' +  satellite_product + '/' + f'{month_date:%Y/%m}/01/S5P*/*nc')
     if len(files_to_read) == 0:
         print('missing files, check path')
         raise FileNotFoundError
     new_df = pd.DataFrame()
     print('files to read:', len(files_to_read))
     for idx, filename in enumerate(files_to_read):
-        print('reading', filename)
+        print('reading ',idx,'out of',len(files_to_read), filename)
         nc = netCDF4.Dataset(filename)
         # variab = nc.variables.keys()
+        # TODO make variable list defined somewhere in main code?
         variab_lib = {lon_var:'PRODUCT/longitude',
                        lat_var:'PRODUCT/latitude',
-                       'footprint_lon':'PRODUCT/SUPPORT_DATA/GEOLOCATIONS/longitude_bounds',
-                       'footprint_lat':'PRODUCT/SUPPORT_DATA/GEOLOCATIONS/latitude_bounds',
+                    #    'footprint_lon':'PRODUCT/SUPPORT_DATA/GEOLOCATIONS/longitude_bounds',
+                    #    'footprint_lat':'PRODUCT/SUPPORT_DATA/GEOLOCATIONS/latitude_bounds',
                        'vcd':'PRODUCT/nitrogendioxide_tropospheric_column',
                        'vcd_err':'PRODUCT/nitrogendioxide_tropospheric_column_precision_kernel',
                        'surface_pressure':'PRODUCT/SUPPORT_DATA/INPUT_DATA/surface_pressure',
                        'quality_value':'PRODUCT/qa_value',
                        'cloud_fraction':'PRODUCT/SUPPORT_DATA/DETAILED_RESULTS/cloud_fraction_crb_nitrogendioxide_window',
-                       'time':'PRODUCT/time'}
+                       'time':'PRODUCT/delta_time'}
         
         for key_ind,key in enumerate(variab_lib.keys()):
             print('Reading variable: %s' % key)
             # key_ind = variab.index(key)
             if key_ind == 0:
                 dat_read = nc[variab_lib[key]][:]
-                if (len(np.shape(dat_read)) == 3) and (np.shape(dat_read)[0]==1):
+                dat_shape = dat_read.shape
+                # print(key,dat_read.shape)
+                if (len(dat_shape) == 3) and (dat_shape[0]==1):
                     datap = pd.DataFrame(dat_read.ravel(), columns=[key])
-                elif (len(np.shape(dat_read)) == 4) and (np.shape(dat_read)[0]==1):
+                elif (len(dat_shape) == 4) and (dat_shape[0]==1):
                     datap = pd.DataFrame(dat_read.ravel(), columns=[key])
                 # datap = pd.DataFrame(nc.variables[variab_lib[key]][:], columns=[key])
                 else:
-                    print('unexpected dimension',np.shape(dat_read),key)
+                    print('unexpected dimension',dat_shape,key)
                     raise DataError
                 
             else:
                 if key == 'footprint_lon' or key == 'footprint_lat':
-                    datap[key] = [uu for uu in nc[variab_lib[key]][:].T]
+                    dat_read = nc[variab_lib[key]][:]
+                    dat_shape = dat_read.shape
+                    # print(key,dat_shape)
+                    if (len(dat_shape) == 4) and (dat_shape[0]==1):
+                        to_pass_df = [uu for uu in dat_read.reshape(dat_shape[0]*dat_shape[1]*dat_shape[2],dat_shape[3])]
+                        # print(np.shape(to_pass_df))
+                        datap[key] = to_pass_df
+                    # datap = pd.DataFrame(nc.variables[variab_lib[key]][:], columns=[key])
+                    else:
+                        print('unexpected dimension',dat_shape,key)
+                        raise DataError
                     # datap[key] = [uu for uu in nc.variables[variab_lib[key]][:].T]
                 elif key == 'time':
-                    stime = datetime.datetime.strptime(nc[variab_lib[key]].getncattr('units')[14:],'%Y-%m-%d 00:00:00')
+                    dat_read = nc[variab_lib[key]][:]
+                    shape_help = nc[variab_lib[lon_var]].shape[2]
+                    dat_shape = dat_read.shape
+                    stime = datetime.datetime.strptime(nc[variab_lib[key]].getncattr('units')[19:],'%Y-%m-%d 00:00:00')
+                    # print(list(dat_shape) + [shape_help])
                     # stime = datetime.datetime.strptime(nc.variables[variab_lib[key]].getncattr('units')[14:],'%Y-%m-%d 00:00:00')
-                    dt = nc[variab_lib[key]][:]
+                    dt = np.rollaxis(np.full([shape_help] + list(dat_shape), nc[variab_lib[key]][:]),0,3).ravel()
                     # dt = nc.variables[variab_lib[key]][:]
-                    datap[key] = [stime + timedelta(seconds =uu) for uu in dt]
+                    datap[key] = [stime + timedelta(seconds =float(uu)/1000.) for uu in dt]
+                    # print(datap[key].values[0],datap[key].values[-1])
                 else:
-                    datap[key] = [uu for uu in nc[variab_lib[key]][:]]
+                    dat_read = nc[variab_lib[key]][:]
+                    dat_shape = dat_read.shape
+                    # print(key,dat_read.shape)
+                    if (len(dat_shape) == 3) and (dat_shape[0]==1):
+                        datap[key] = dat_read.ravel()
+                    # elif (len(dat_shape) == 4) and (dat_shape[0]==1):
+                    #     datap[key] = dat_read.ravel()
+                    # datap = pd.DataFrame(nc.variables[variab_lib[key]][:], columns=[key])
+                    else:
+                        print('unexpected dimension',dat_shape,key)
+                        raise DataError
+                    # datap[key] = [uu for uu in nc[variab_lib[key]][:]]
                     # datap[key] = [uu for uu in nc.variables[variab_lib[key]][:]]
         # cap to sides of domain
         new_df_tmp = datap[
             ((datap[lon_var] >= west) & (datap[lon_var] < east) & (datap[lat_var] >= south) & (
-                    datap[lat_var] < north))]
+                    datap[lat_var] < north)&(datap['quality_value']>=0.75)&(datap['cloud_fraction']<=0.3))]
         # ensure observations fall within designated time (UTC)
         new_df_tmp_fin = new_df_tmp[((new_df_tmp.time >= start) & (new_df_tmp.time < end))]
         # append to final array
         if len(new_df_tmp_fin) > 0:
             new_df = new_df.append(new_df_tmp_fin)
-            print(new_df_tmp_fin.shape, filename, 'done', start, end, new_df_tmp_fin['time'].min(), new_df_tmp_fin[
-                'time'].max(), new_df_tmp_fin['time'].iloc[0])
-        else:
-            print(new_df_tmp_fin.shape, filename, 'done')
+            # print(new_df_tmp_fin.shape, filename, 'done', start, end, new_df_tmp_fin['time'].min(), new_df_tmp_fin[
+            #     'time'].max(), new_df_tmp_fin['time'].iloc[0])
+        # else:
+        #     ''
+        #     #print(new_df_tmp_fin.shape, filename, 'done')
         # keep last file open to copy paste dimensions and TODO attributes from
         if idx != len(files_to_read) - 1:
             nc.close()
+    #endfor filename loop
     print(new_df.shape, filename, 'all files done', new_df['time'].min(), new_df['time'].max())
     if not ('u' in variab_lib.keys() or 'v' in variab_lib.keys()):
         # add meteo
@@ -388,29 +429,35 @@ def create_subset(filename,west, east,south, north,month_date):
         print('example v', new_df.v.values[0:10])
     # create new file
     print('Creating subset....')
-    nc_new = netCDF4.Dataset(filename, 'w')
+    nc_new = netCDF4.Dataset(filename_out, 'w')
     # TODO add attributes
-    for dim in nc.dimensions:
-        if 'points' not in dim:
-            nc_new.createDimension(dim, nc.dimensions[dim].size)
-        else:
-            nc_new.createDimension(dim, len(new_df))
+    dimensions_out = {'observations':len(new_df)}
+                    #   'corners':4}
+                    #   'meteolevels':10}
+    for dim in dimensions_out:
+        nc_new.createDimension(dim, dimensions_out[dim])
     # for vari in nc.variables:
     for vari in list(new_df.keys()):
         try:
-            var_tmp = nc_new.createVariable(vari, nc.variables[vari].dtype, nc.variables[vari].dimensions)
-            for attri in nc.variables[vari].ncattrs():
-                var_tmp.setncattr(attri,nc.variables[vari].getncattr(attri))
+            # TODO add dtypes from frame, pandas doesnt always go well though
+            var_tmp = nc_new.createVariable(vari, float, 'observations')
         except:
+            print('dimension not yet included',np.array(new_df[vari]).shape)
+            raise ValueError
             # adding the new variables, with fixed obs length, drag in from lon_var
             # TODO add attributes
-            var_tmp = nc_new.createVariable(vari, nc.variables[lon_var].dtype, nc.variables[lon_var].dimensions)
+            # var_tmp = nc_new.createVariable(vari, nc.variables[lon_var].dtype, nc[variab_lib[vari]].dimensions)
         if vari != 'time':
             # TODO add attributes
             var_tmp[:] = np.array([uu for uu in new_df[vari]])
         else:
             # TODO add attributes
             var_tmp[:] = dates.date2num(np.array([uu for uu in new_df[vari]]))
+        if vari in variab_lib:
+            for attri in nc[variab_lib[vari]].ncattrs():
+                if ('FillValue' not in attri):
+                    # TODO add attributes other variables, cleanup
+                    var_tmp.setncattr(attri,nc[variab_lib[vari]].getncattr(attri))
     nc_new.close()
     nc.close()
     status = 0
@@ -427,11 +474,11 @@ def add_u_v_data(era_path, start, end, datas, lat_var_name, lon_var_name):
     datas.loc[:, 'u'] = 0.0
     datas.loc[:, 'v'] = 0.0
     datas.loc[:, 'windspeed'] = 0.0
-    datas.loc[:, 'winddirec_direct'] = 0.0
+    datas.loc[:, 'winddirection'] = 0.0
     datas.loc[:, 'hh'] = [tt.hour for tt in datas.time]
     datas.loc[:, 'minmin'] = [tt.minute for tt in datas.time]
     datas.loc[:, 'hh_int'] = np.rint(datas['hh']).astype(int)
-    print(datas.iloc[0])
+    # print(datas.iloc[0])
     s_t = time.time()
     for dd in range(ndays):
         print('matching', date_inter)
@@ -439,7 +486,7 @@ def add_u_v_data(era_path, start, end, datas, lat_var_name, lon_var_name):
         next_date = date_inter + datetime.timedelta(1)
         date_today = '%2.4i%2.2i%2.2i' % (date_inter.year, date_inter.month, date_inter.day)
         era_file_to_read = era_path + date_today[0:4] + '/' + 'ECMWF_ERA5_uv_%s.nc'%date_today
-        if not os.path.isfile():
+        if not os.path.isfile(era_file_to_read):
             print('file missing',era_file_to_read)
             print('Download the ERA5 data....then restart')
             raise IOError
@@ -452,28 +499,28 @@ def add_u_v_data(era_path, start, end, datas, lat_var_name, lon_var_name):
         sel = ((dates.date2num(datas.time) >= dates.date2num(date_inter)) & (dates.date2num(datas.time) < dates.date2num(next_date)))
         print('adding ERA5', era_path + 'ERA5/nc/' + date_today[
                                                      0:4] + '/' + 'ECMWF_ERA5_uv_' + date_today + '.nc', np.shape(
-            np.where(sel)), int(time.time() - s_t), 'seconds_passed')
-        if len(np.where(sel)[0]) != 0:
+            np.where(sel)[0]), int(time.time() - s_t), 'seconds_passed')
+        if len(datas['time'][sel]) != 0:
             # for now quick interpolation
             # TODO later add surface pressure level dependent meteo
             dataout = interpolate_meteo(datas[lon_var_name][sel].values, datas[lat_var_name][sel].values,
                                           datas['hh'][sel].values + datas['minmin'][sel].values / 60., lonstep, latstep,
                                           ncera)#,ncera_v)
+            print('test',dataout.shape)
             dataout.loc[:, 'windspeed'] = np.sqrt(dataout['u'].values ** 2 + dataout['v'].values ** 2)
-            dataout.calc_wind_direction[:, 'winddirec_direct'] = np.array(
-                [calc_wind_direction(u1, v1) for u1, v1 in zip(dataout['u'].values, dataout['v'].values)])
+            dataout.loc[:, 'winddirection'] = calc_wind_direction(dataout['u'].values, dataout['v'].values)
             # print('testje1', np.max(datas['u'].values), np.max(datas['v'].values)
             datas.loc[sel, 'u'] = dataout['u'].values.copy()
             datas.loc[sel, 'v'] = dataout['v'].values.copy()
             # print('testje2',np.max(datas['u'].values),np.max(datas['v'].values)
             datas.loc[sel, 'windspeed'] = dataout['windspeed'].values
-            datas.loc[sel, 'winddirec_direct'] = dataout['winddirec_direct'].values
+            datas.loc[sel, 'winddirection'] = dataout['winddirection'].values
         ncera.close()
         # ncera_v.close()
         
         date_inter += datetime.timedelta(1)
     # quick checkup
-    print('here era5', dataout.winddirec_direct.min(), dataout.winddirec_direct.max())
+    print('here era5', dataout.winddirection.min(), dataout.winddirection.max())
     return datas
 
 
@@ -508,9 +555,9 @@ def interpolate_meteo(pixlon, pixlat, hh, lon_dx, lat_dx, ancdata):
     '''
     # s_t_t = time.time()
     # ensure float
-    pixlon = float(pixlon)
-    pixlat = float(pixlat)
-
+    pixlon = pixlon.astype(float)
+    pixlat = pixlat.astype(float)
+    print('pix',pixlon.shape)
     # 0-360 domain argh
     pixlon = pixlon % 360
     lon_m = (pixlon % lon_dx)
@@ -544,15 +591,22 @@ def interpolate_meteo(pixlon, pixlat, hh, lon_dx, lat_dx, ancdata):
     # TODO replace for rgi.interpolation?
     closestmin = (hh - closest) * 60
     # TODO We take the lowest 3 layers for now... change to surface pressure based 
+    print('interpolating...')
+    # data_to_frame = np.array(
+    #     [[np.mean(((60 - np.array(closestmin_tmp)) / 60. * ancdatau_zero[closest_tmp, :3, lat_ind_tmp, lon_ind_tmp]) + (
+    #             (np.array(closestmin_tmp)) / 60. * ancdatau_zero[closest_tmp2, :3, lat_ind_tmp, lon_ind_tmp])) * 3.6,
+    #       np.mean(((60 - np.array(closestmin_tmp)) / 60. * ancdatav_zero[closest_tmp, :3, lat_ind_tmp, lon_ind_tmp]) + (
+    #               (np.array(closestmin_tmp)) / 60. * ancdatav_zero[closest_tmp2, :3, lat_ind_tmp, lon_ind_tmp])) * 3.6]
+    #      for
+    #      closestmin_tmp, closest_tmp, closest_tmp2, lat_ind_tmp, lon_ind_tmp in
+    #      zip(closestmin, closest, closest2, lat_ind, lon_ind)])
     data_to_frame = np.array(
-        [[np.mean(((60 - np.array(closestmin_tmp)) / 60. * ancdatau_zero[closest_tmp, :3, lat_ind_tmp, lon_ind_tmp]) + (
-                (np.array(closestmin_tmp)) / 60. * ancdatau_zero[closest_tmp2, :3, lat_ind_tmp, lon_ind_tmp])) * 3.6,
-          np.mean(((60 - np.array(closestmin_tmp)) / 60. * ancdatav_zero[closest_tmp, :3, lat_ind_tmp, lon_ind_tmp]) + (
-                  (np.array(closestmin_tmp)) / 60. * ancdatav_zero[closest_tmp2, :3, lat_ind_tmp, lon_ind_tmp])) * 3.6]
-         for
-         closestmin_tmp, closest_tmp, closest_tmp2, lat_ind_tmp, lon_ind_tmp in
-         zip(closestmin, closest, closest2, lat_ind, lon_ind)])
-    datap = pd.DataFrame(data_to_frame.astype(float), columns=['u', 'v'])
+        [np.mean(((60 - np.array(closestmin)[:,np.newaxis]) / 60. * ancdatau_zero[closest, :3, lat_ind, lon_ind]) + (
+                (np.array(closestmin)[:,np.newaxis]) / 60. * ancdatau_zero[closest2, :3, lat_ind, lon_ind]),1) * 3.6,
+          np.mean(((60 - np.array(closestmin)[:,np.newaxis]) / 60. * ancdatav_zero[closest, :3, lat_ind, lon_ind]) + (
+                  (np.array(closestmin)[:,np.newaxis]) / 60. * ancdatav_zero[closest2, :3, lat_ind, lon_ind]),1) * 3.6]
+         )
+    datap = pd.DataFrame(data_to_frame.astype(float).T, columns=['u', 'v'])
     return datap
 
 
