@@ -5,3 +5,7 @@ Measuring NOx concentration from space is relatively easy. The pollutant's lifet
 # Tool
 
 We aim at creating and then freely offering a software tool here. The program allows for emissions inventory estimates to be compared with independently derived calculations based on satellite data. Please refer to the repository's [wiki](https://github.com/UBA-DE-Emissionsituation/space-emissions/wiki) for all the details.
+
+# Setting up a working python environment
+
+We use specific python packages within these tools. If the tool does not run off the shelf and errors suggest this has to do with missing/failing packages, making a dedicated conda environment can be the solution. To enable usage of the same environment in which the tools have been tested a YAML file (environment.yml) is inculded in this project. Generating a conda environment, called geo_env, with this file is done using "conda env create --file environment.yml". Don't forget activating the enviroment before using the tool through "conda activate geo_env".
