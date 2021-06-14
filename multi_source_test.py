@@ -36,7 +36,7 @@ results = {} # results will be put here as results[<filename>][<data>]
 start = datetime.datetime.now()
 
 for filename, region in regions.items():
-    results[filename] = MultiSourceCalculator().run(region, DateRange(start='2019-06-01', end='2019-06-02'), Pollutant.NO2)
+    results[filename] = MultiSourceCalculator().run(region, DateRange(start='2019-06-01', end='2019-06-30'), Pollutant.NO2)
     print(f"Done with region represented by file '{filename}'")
 
 print(f"All finished in {datetime.datetime.now()-start}.")

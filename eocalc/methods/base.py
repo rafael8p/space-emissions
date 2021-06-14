@@ -26,22 +26,6 @@ class Status(Enum):
 
 class DateRange:
     """Represent a time span between two dates. Includes both start and end date."""
-<<<<<<< HEAD
-
-    def __init__(self, start: str, end: str):
-        self.start = start
-        self.end = end
-
-    def __str__(self) -> str:
-        return f"[{self.start} to {self.end}, {len(self)} days]"
-
-    def __eq__(self, other: object) -> bool:
-        return self.__dict__ == other.__dict__ if isinstance(other, self.__class__) else False
-
-    def __ne__(self, other: object) -> bool:
-        return not self.__eq__(other)
-
-=======
 
     def __init__(self, start: Union[date, str], end: Union[date, str]):
         self.start = start
@@ -56,22 +40,14 @@ class DateRange:
     def __hash__(self) -> int:
         return hash((self.start, self.end))
 
->>>>>>> naive
     def __len__(self) -> int:
         return (self.end - self.start).days + 1
 
     def __iter__(self):
-<<<<<<< HEAD
-        yield from [self.start + timedelta(days=count) for count in range(len(self))]
-
-    def __setattr__(self, key, value):
-        super.__setattr__(self, key, date.fromisoformat(value))
-=======
         yield from (self.start + timedelta(days=count) for count in range(len(self)))
 
     def __setattr__(self, key, value):
         super.__setattr__(self, key, value if isinstance(value, date) else date.fromisoformat(value))
->>>>>>> naive
 
         if hasattr(self, "start") and hasattr(self, "end") and self.end < self.start:
             raise ValueError(f"Invalid date range, end ({self.end}) cannot be before start ({self.start})!")
@@ -250,7 +226,7 @@ class EOEmissionCalculator(ABC):
         if not self.covers(region):
             raise ValueError("Region not covered by emission estimation method!")
         # EPSG:4326 is the shapely default (WGS84), EPSG:8857 is the Equal earth projection
-        # projection = Transformer.from_crs(CRS('EPSG:4326'), CRS('EPSG:8857'), always_xy=True).transform
+        projection = Transformer.from_crs(CRS('EPSG:4326'), CRS('EPSG:8857'), always_xy=True).transform
         if transform(projection, region).area / 10**6 < self.minimum_area_size():
             raise ValueError("Region too small!")
 

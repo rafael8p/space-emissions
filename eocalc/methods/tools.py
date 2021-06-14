@@ -169,7 +169,7 @@ def flatten_list(list_of_lists):
 def _read_subset_data(region: MultiPolygon, filelist: list):
     # TODO Make this work with regions wrapping around to long < -180 or long > 180?
     min_lat, max_lat = region.bounds[1], region.bounds[3]
-    min_long, max_long = region.bounds[0], region.bounds[2]
+    min_long, max_long = region.bounds[0], region.bounds[2] # or region +- 5degrees
     datap = pd.DataFrame()
     # turn into xarray concate?
     for fil in filelist:
@@ -194,12 +194,13 @@ def _read_subset_data(region: MultiPolygon, filelist: list):
 
 
 # read data
-def _assure_data_availability(region,day: date,force_rebuild = False, force_pass = False,satellite_name = 'Tropomi') -> str:
+def _assure_data_availability(region,day: date,force_rebuild = False, force_pass = False,satellite_name = 'Tropomi') -> list:
     # check lon_min,lon_max,lat_min,lat_max
     # (5.872058868408317, 47.26990127563522, 15.028479576110897, 55.05652618408209)
     # basic patterns
     lon_min,lon_max = region.bounds[0], region.bounds[2] #lons
     lat_min,lat_max = region.bounds[1], region.bounds[3] #lats
+    print('region_bounds',region.bounds)
     # TODO propose to save all files in 20 longitudex15latitude blocks... 
     # removes the need for a lot of redoing files, creates a regularized setup
     # 
@@ -326,7 +327,7 @@ def create_subset(filename_out,west, east,south, north,month_date):
     end = datetime.datetime(year,month,1)
     print('search pattern',LOCAL_S5P_FOLDER + '/' +  satellite_name + '/' +  satellite_product + '/' + f'{month_date:%Y/%m}/*/*/*nc')
     # files_to_read = glob.glob(LOCAL_S5P_FOLDER + '/' +  satellite_name + '/' +  satellite_product + '/' + f'{month_date:%Y/%m}/??/S5P*/*nc')
-    files_to_read = glob.glob(LOCAL_S5P_FOLDER + '/' +  satellite_name + '/' +  satellite_product + '/' + f'{month_date:%Y/%m}/01/S5P*/*nc')
+    files_to_read = glob.glob(LOCAL_S5P_FOLDER + '/' +  satellite_name + '/' +  satellite_product + '/' + f'{month_date:%Y/%m}/*/S5P*/*nc')
     if len(files_to_read) == 0:
         print('missing files, check path')
         raise FileNotFoundError

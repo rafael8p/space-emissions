@@ -83,9 +83,9 @@ class MultiSourceCalculator(EOEmissionCalculator):
         for day in period:
             month_cache_key = f"{day:%Y-%m}"
             if month_cache_key not in cache.keys():
-                concentrations = tools._read_subset_data(region, tools._assure_data_availability(region,day))#period))
+                df_obs = tools._read_subset_data(region, tools._assure_data_availability(region,day))#period))
 
-
+        # 3. Perform operations multi-source
 
 
         # 3. Clip to actual region and add a data frame column with each cell's size
