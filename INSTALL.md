@@ -16,4 +16,4 @@ Install your dependencies: [`mamba install jupyterlab gdal geopandas shapely num
 The shorthand version would be: [`mamba create -n py39spaceborne python=3.9 jupyterlab gdal geopandas shapely numpy rtree pyproj contextily pytest requests`]
 
 
-* Now you should be able to run the Jupyter notebooks from the spaceborne-emission calculator given that you have activated your new environment with [`conda activate py39spaceborne`] and you are seeing `py39spaceborne` in your shell before your command prompt. To start up Jupyter Notebook just type and execute [`jupyter -notebook`] in your shell.
+* Now you should be able to run the Jupyter notebooks from the spaceborne-emission calculator given that you have activated your new environment with [`conda activate py39spaceborne`] and you are seeing `py39spaceborne` in your shell before your command prompt. To start up Jupyter Notebook just type and execute [`jupyter-notebook`] in your shell.
