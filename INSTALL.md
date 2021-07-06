@@ -22,11 +22,11 @@ We would like to reccommend to use the binary python _3.X_ installers if you sta
 * - Create your new python environment with: [`mamba create -n py39spaceborne python=3.9`] </br>   
 For the space-emissions tool you need to use Python>=3.9.</br>
    - Activate your new environment: [`conda activate py39spaceborne`] </br>
-   - Install your dependencies: [`mamba install jupyterlab gdal geopandas shapely numpy rtree pyproj contextily pytest sentinelsat cdsapi requests -c conda-forge`] 
+   - Install your dependencies: [`mamba install jupyterlab gdal geopandas shapely numpy rtree pyproj contextily pytest sentinelsat cdsapi requests h5py netcdf4 -c conda-forge`] 
 </br>
 
 
- * The shorthand version for the three steps outlined above would be: [`mamba create -n py39spaceborne python=3.9 jupyterlab gdal geopandas shapely numpy rtree pyproj contextily pytest sentinelsat cdsapi requests -c conda-forge`]
+ * The shorthand version for the three steps outlined above would be: [`mamba create -n py39spaceborne python=3.9 jupyterlab gdal geopandas shapely numpy rtree pyproj contextily pytest sentinelsat cdsapi requests h5py netcdf4 -c conda-forge`]
 </br>
 
 </br>
