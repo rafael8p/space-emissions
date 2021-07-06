@@ -1,6 +1,6 @@
 #  Requirements and Installation
 
-In order to use the spaceborne-emission calculator efficiently also on your platform we would reccommend the usage of the "Fast Cross-Platform Package Manager" [Mamba](https://github.com/mamba-org/mamba), which will handle all the necessary dependencies for the spaceborne-emmission calculator following the setup procedure described here from the scratch:
+In order to use the spaceborne-emission calculator efficiently also on your platform we would reccommend the usage of the "Fast Cross-Platform Package Manager" [Mamba](https://github.com/mamba-org/mamba), which will handle all the necessary dependencies for the spaceborne-emmission calculator following the setup procedure described here from scratch:
 
 * Get the necessary python version and a packagemanager for handling virtual python environments, if you do not already have a tool for managing these environments. This is a an important step as we strongly advise you to not alter your operating systems own python environment as there is the potential to break dependencies and render other programs non functional when installing additional packages or changing your systems python version.</br>
 We would like to reccommend to use the binary python _3.X_ installers if you start from scratch using these [Binaries](https://github.com/conda-forge/miniforge#mambaforge), which are available for most computing platforms. 
